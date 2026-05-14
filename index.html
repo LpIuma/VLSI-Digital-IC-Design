@@ -57,6 +57,12 @@ body{min-height:100vh;display:flex;flex-direction:column;align-items:center;padd
   background-repeat:no-repeat;background-position:right 12px center}
 .model-wrapper select:focus{border-color:var(--border-focus)}
 
+/* Presets */
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.preset-pill{padding:3px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);font-size:0.7rem;cursor:pointer;transition:all .15s}
+.preset-pill:hover{background:var(--border);color:var(--text)}
+
 /* Button */
 .btn-run{width:100%;max-width:720px;padding:14px;border:none;border-radius:var(--radius);
   font-size:0.95rem;font-weight:700;font-family:inherit;cursor:pointer;
@@ -170,6 +176,12 @@ body{min-height:100vh;display:flex;flex-direction:column;align-items:center;padd
     <div class="field">
       <label for="baseUrl">Base URL</label>
       <input type="url" id="baseUrl" value="https://token-plan-cn.xiaomimimo.com/v1" placeholder="https://api.example.com/v1">
+      <div class="presets">
+        <button class="preset-pill" onclick="setPresetUrl('https://token-plan-cn.xiaomimimo.com/v1')">MiMo</button>
+        <button class="preset-pill" onclick="setPresetUrl('https://api.deepseek.com')">DeepSeek</button>
+        <button class="preset-pill" onclick="setPresetUrl('https://openrouter.ai/api/v1')">OpenRouter</button>
+        <button class="preset-pill" onclick="setPresetUrl('https://api.siliconflow.cn/v1')">硅基流动</button>
+      </div>
     </div>
     <div class="field">
       <label for="modelName">模型</label>
@@ -238,6 +250,17 @@ marked.setOptions({
     return hljs.highlightAuto(code).value;
   }
 });
+
+// ============================================================
+// 快捷预填 Base URL
+// ============================================================
+function setPresetUrl(url) {
+  const input = document.getElementById("baseUrl");
+  input.value = url;
+  // 切换预填后重置 fetched 状态并自动拉取
+  modelsFetched = false;
+  fetchModels();
+}
 
 // ============================================================
 // 自动获取模型列表（GET /models）

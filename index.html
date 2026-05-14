@@ -220,7 +220,119 @@ marked.setOptions({
   }
 });
 
-function startPipeline() {
+// ============================================================
+// Agent System Prompts（与 embodied_ai_hw.py 保持一致）
+// ============================================================
+const AGENT_PROMPTS = {
+  1: `你是一位资深的具身智能产品经理（PM Agent）。
+你的任务是深入分析具身智能（Embodied AI）在实际部署中所面临的核心物理矛盾：
+即"高算力需求"与"机器人低功耗、小体积硬件约束"之间的根本冲突。
+请从以下维度展开分析：
+1. 算力需求侧：大模型推理（LLM/VLM）、实时感知（3D视觉、点云处理）、运动控制（MPC/RL）各自的算力量级。
+2. 硬件约束侧：机器人端侧（如人形机器人、无人机、AMR）的功耗预算（通常10-50W）、散热限制、体积/重量限制。
+3. 矛盾的本质：为什么不能简单地"装一块更强的芯片"来解决问题？从功耗墙、散热墙、成本约束、实时性要求等角度阐述。
+4. 问题的紧迫性：结合2025-2026年产业趋势（如人形机器人爆发、大模型端侧化），说明为什么现在必须解决这个矛盾。
+输出格式要求：使用Markdown格式，层次清晰，包含小标题，要有具体的数据和案例支撑，篇幅控制在800-1200字。`,
+
+  2: `你是一位具身智能系统架构师（Architecture Agent）。
+你将接收来自PM Agent的具身智能算力痛点分析报告，基于此提出一套完整的"云-边-端协同"算力分配架构（也称为"大小脑分离架构"）。
+请按以下框架展开方案设计：
+1. 架构总览：画出（用文字描述）云-边-端三级算力分配的逻辑架构图，明确每层的职责。
+2. 大脑（Cloud/Edge）层：承载哪些高算力任务、需要什么级别的硬件、通信延迟如何保证。
+3. 小脑（End-device）层：端侧芯片选型建议、必须本地处理的实时任务、端侧算力预算分配。
+4. 云边端协同机制：任务动态卸载策略、模型分层部署、网络中断时的降级方案。
+5. 该架构相比纯端侧/纯云端方案的优势对比。
+输出格式要求：使用Markdown格式，包含架构层级的表格对比，提供具体的硬件选型和参数，篇幅控制在1000-1500字。`,
+
+  3: `你是一位端侧AI算法优化专家（Algorithm Agent）。
+你将接收来自Architecture Agent的云-边-端协同架构方案，针对其中端侧（小脑）算力不足的问题，提出一整套具体的模型轻量化与算力优化落地手段。
+请从以下技术路径展开：
+1. 模型压缩与轻量化：知识蒸馏、模型剪枝（结构化vs非结构化）、低秩分解。
+2. 量化部署：INT8/INT4/混合精度量化方案，QAT vs PTQ的取舍，具体工具链推荐（TensorRT, ONNX Runtime, MLC-LLM等）。
+3. 异构计算优化：CPU+GPU+NPU+DSP的任务分配策略，算子级别的硬件亲和性优化，流水线并行在端侧的应用。
+4. 端侧专用模型设计：轻量化网络架构（MobileNet, EfficientNet, TinyLLM等），针对机器人任务的定制化模型裁剪。
+5. 实际落地案例：给出1-2个具体的端侧部署案例，包含优化前后的延迟/吞吐量/功耗对比数据。
+输出格式要求：使用Markdown格式，包含技术对比表格，有具体的数据支撑，篇幅控制在1000-1500字。`
+};
+
+const AGENT_USER_INPUTS = {
+  1: "请分析具身智能（Embodied AI）在实际部署中面临的核心物理矛盾：即高算力需求（大模型推理、实时感知、运动控制）与机器人硬件的低功耗、小体积约束之间的根本冲突。请给出详细的分析报告。",
+  2: (prev) => `以下是PM Agent对具身智能算力痛点的分析报告：\n\n---\n${prev}\n---\n\n请基于以上分析，提出一套完整的"云-边-端协同（大小脑分离）"算力分配架构方案。`,
+  3: (prev) => `以下是Architecture Agent提出的云-边-端协同架构方案：\n\n---\n${prev}\n---\n\n请针对该架构中端侧（小脑）算力不足的问题，提出一整套具体的模型轻量化与算力优化落地手段。`
+};
+
+// ============================================================
+// 流式调用 OpenAI 兼容 API（纯前端，无需后端）
+// ============================================================
+async function streamChat(apiKey, baseUrl, model, systemPrompt, userContent, agentId) {
+  // 确保 baseUrl 末尾没有多余的斜杠
+  const url = baseUrl.replace(/\/+$/, "") + "/chat/completions";
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.7,
+      max_tokens: 4096,
+      top_p: 0.9,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    let errMsg = `API 请求失败 (HTTP ${response.status})`;
+    try { const errJson = await response.json(); errMsg += `: ${errJson.error?.message || JSON.stringify(errJson)}`; } catch {}
+    throw new Error(errMsg);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const payload = trimmed.slice(6);
+      if (payload === "[DONE]") continue;
+
+      try {
+        const chunk = JSON.parse(payload);
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          // 实时更新 UI
+          const content = document.getElementById(`agent${agentId}Content`);
+          content.innerHTML = marked.parse(fullText) + '<span class="cursor"></span>';
+          content.scrollTop = content.scrollHeight;
+        }
+      } catch {}
+    }
+  }
+
+  return fullText;
+}
+
+// ============================================================
+// 主工作流（纯前端串行执行）
+// ============================================================
+async function startPipeline() {
   const apiKey = document.getElementById("apiKey").value.trim();
   const baseUrl = document.getElementById("baseUrl").value.trim();
   const model = document.getElementById("modelName").value.trim();
@@ -243,87 +355,66 @@ function startPipeline() {
     rawOutputs[i] = "";
   });
 
-  fetch("/api/run", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({api_key: apiKey, base_url: baseUrl, model: model})
-  }).then(response => {
-    if (!response.ok) {
-      response.json().then(d => showError(d.error || "请求失败"));
-      resetBtn(); return;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+  try {
+    // --- Agent 1: PM Agent ---
+    setAgentRunning(1);
+    const userInput1 = AGENT_USER_INPUTS[1];
+    rawOutputs[1] = await streamChat(apiKey, baseUrl, model, AGENT_PROMPTS[1], userInput1, 1);
+    setAgentDone(1);
 
-    function pump() {
-      reader.read().then(({done, value}) => {
-        if (done) return;
-        buffer += decoder.decode(value, {stream: true});
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        let eventType = null;
-        for (const line of lines) {
-          if (line.startsWith("event: ")) eventType = line.slice(7);
-          else if (line.startsWith("data: ") && eventType) {
-            handleEvent(eventType, JSON.parse(line.slice(6)));
-            eventType = null;
-          }
-        }
-        pump();
-      });
+    // --- Agent 2: Architecture Agent ---
+    setAgentRunning(2);
+    const userInput2 = AGENT_USER_INPUTS[2](rawOutputs[1]);
+    rawOutputs[2] = await streamChat(apiKey, baseUrl, model, AGENT_PROMPTS[2], userInput2, 2);
+    setAgentDone(2);
+
+    // --- Agent 3: Algorithm Agent ---
+    setAgentRunning(3);
+    const userInput3 = AGENT_USER_INPUTS[3](rawOutputs[2]);
+    rawOutputs[3] = await streamChat(apiKey, baseUrl, model, AGENT_PROMPTS[3], userInput3, 3);
+    setAgentDone(3);
+
+    // --- 生成报告 ---
+    const now = new Date().toLocaleString("zh-CN");
+    reportContent = `# 具身智能算力瓶颈解决方案\n\n> 生成时间: ${now}\n> 生成方式: 多 Agent 协作（PM → Architecture → Algorithm）\n> 使用模型: ${model}\n\n---\n\n## 第一部分：核心矛盾分析（PM Agent）\n\n${rawOutputs[1]}\n\n---\n\n## 第二部分：云-边-端协同架构设计（Architecture Agent）\n\n${rawOutputs[2]}\n\n---\n\n## 第三部分：端侧模型轻量化与算力优化（Algorithm Agent）\n\n${rawOutputs[3]}\n\n---\n\n## 总结\n\n本报告由三个专业 Agent 协作完成：\n1. **PM Agent** 识别了具身智能中"高算力需求"与"低功耗硬件约束"的核心物理矛盾\n2. **Architecture Agent** 提出了"云-边-端协同（大小脑分离）"的系统架构方案\n3. **Algorithm Agent** 给出了端侧模型轻量化的具体技术路径和落地方案\n\n三者形成了从 **问题定义 → 架构设计 → 算法落地** 的完整解决链路。\n\n---\n*本报告由 AI 多 Agent 系统自动生成，仅供学术参考。*\n`;
+
+    document.getElementById("completeBar").classList.add("show");
+    document.getElementById("completeInfo").textContent = `报告已生成 (${reportContent.length} 字符)，点击右侧按钮下载`;
+
+  } catch (e) {
+    // 找到当前正在运行的 agent 并标记为错误
+    for (let i = 1; i <= 3; i++) {
+      const card = document.getElementById(`agent${i}Card`);
+      if (card.classList.contains("running")) {
+        card.classList.remove("running");
+        card.classList.add("error");
+        document.getElementById(`agent${i}Status`).textContent = "失败";
+        document.getElementById(`agent${i}Content`).innerHTML =
+          `<p style="color:var(--error)">${e.message}</p>`;
+        break;
+      }
     }
-    pump();
-  }).catch(e => { showError("网络错误: " + e.message); resetBtn(); });
+    showError(e.message);
+  }
+
+  resetBtn();
 }
 
-function handleEvent(type, data) {
-  switch(type) {
-    case "agent_start": {
-      const card = document.getElementById(`agent${data.agent}Card`);
-      card.classList.add("running");
-      document.getElementById(`agent${data.agent}Status`).textContent = "思考中…";
-      const content = document.getElementById(`agent${data.agent}Content`);
-      content.innerHTML = '<span class="cursor"></span>';
-      break;
-    }
-    case "token": {
-      rawOutputs[data.agent] += data.content;
-      const content = document.getElementById(`agent${data.agent}Content`);
-      content.innerHTML = marked.parse(rawOutputs[data.agent]) + '<span class="cursor"></span>';
-      content.scrollTop = content.scrollHeight;
-      break;
-    }
-    case "agent_done": {
-      const card = document.getElementById(`agent${data.agent}Card`);
-      card.classList.remove("running");
-      card.classList.add("done");
-      document.getElementById(`agent${data.agent}Status`).textContent = "完成";
-      const content = document.getElementById(`agent${data.agent}Content`);
-      content.innerHTML = marked.parse(rawOutputs[data.agent]);
-      content.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
-      break;
-    }
-    case "error": {
-      const card = document.getElementById(`agent${data.agent}Card`);
-      card.classList.remove("running");
-      card.classList.add("error");
-      document.getElementById(`agent${data.agent}Status`).textContent = "失败";
-      document.getElementById(`agent${data.agent}Content`).innerHTML =
-        `<p style="color:var(--error)">${data.message}</p>`;
-      showError(data.message);
-      resetBtn();
-      break;
-    }
-    case "complete": {
-      reportContent = data.report;
-      document.getElementById("completeBar").classList.add("show");
-      document.getElementById("completeInfo").textContent =
-        `已保存至 Project1_Solution.md (${data.char_count} 字符)`;
-      resetBtn();
-      break;
-    }
-  }
+function setAgentRunning(id) {
+  const card = document.getElementById(`agent${id}Card`);
+  card.classList.add("running");
+  document.getElementById(`agent${id}Status`).textContent = "思考中…";
+  document.getElementById(`agent${id}Content`).innerHTML = '<span class="cursor"></span>';
+}
+
+function setAgentDone(id) {
+  const card = document.getElementById(`agent${id}Card`);
+  card.classList.remove("running");
+  card.classList.add("done");
+  document.getElementById(`agent${id}Status`).textContent = "完成";
+  const content = document.getElementById(`agent${id}Content`);
+  content.innerHTML = marked.parse(rawOutputs[id]);
+  content.querySelectorAll("pre code").forEach(el => hljs.highlightElement(el));
 }
 
 function resetBtn() {
@@ -337,7 +428,7 @@ function showError(msg) {
   const t = document.getElementById("errorToast");
   t.textContent = msg;
   t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 5000);
+  setTimeout(() => t.classList.remove("show"), 8000);
 }
 
 function downloadReport() {

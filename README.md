@@ -13,7 +13,7 @@
 
 ## 🌟 核心特性与架构设计
 
-本项目提供两种交互形态：**纯净高效的命令行流式工具** 与 **极富质感的 Web 可视化工作台**。
+本项目提供两种交互形态：**命令行流式工具** 与 ** Web 可视化工作台**。
 
 ### 1. 三级串行 Agent 推理链路
 *   **📊 Agent 1 (PM Agent)**：剖析端侧算力痛点，量化感知、规划与控制模块的计算开销与功耗限制。
@@ -40,13 +40,13 @@ pip install openai flask
 *   **Windows PowerShell**: `$env:MIMO_API_KEY="sk-xxxxxx"`
 *   **Linux/macOS**: `export MIMO_API_KEY="sk-xxxxxx"`
 
-### 模式一：极速终端版
-直接在终端中输出带有进度提示与Emoji的生成报告，并自动保存到本地：
+### 模式一：终端
+在终端中输出带有进度提示与Emoji的生成报告，并自动保存到本地：
 ```bash
 python embodied_ai_hw.py
 ```
 
-### 模式二：沉浸式 WebUI 平台（推荐）
+### 模式二： WebUI （推荐）
 启动本地 Flask 引擎，在浏览器中进行全流程配置与实时可视化流监控：
 ```bash
 python web_server.py
@@ -65,6 +65,3 @@ python web_server.py
 ├── Project1_Solution.md    # 最终汇总生成的 Markdown 作业报告（示例输出）
 └── README.md               # 项目文档说明
 ```
-
----
-*设计与开发：20230420刘禹哲 | 课程：超大规模数字集成电路设计*

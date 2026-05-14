@@ -20,8 +20,7 @@
 *   **🏗️ Agent 2 (Architecture Agent)**：基于痛点提出“大小脑分离”的云-边-端协同分层算力调度与卸载方案。
 *   **⚡ Agent 3 (Algorithm Agent)**：针对小脑端侧硬件，设计具体的知识蒸馏、INT4 量化与异构计算加速策略。
 
-### 2. 极致的 WebUI 交互体验
-*   **深色极客美学**：采用定制的 HSL/OKLCH 舒适色盘与流畅微动画，避免呆板的原生控件。
+### 2.  WebUI 交互体验
 *   **SSE 实时流式渲染**：后端基于 Flask 建立 Server-Sent Events 流，逐 Token 将三个 Agent 的思考过程无缝推送到前端进行 Markdown 实时渲染。
 *   **一键交付**：运行完毕自动拼接汇总并提供 `.md` 原件本地导出。
 
@@ -41,7 +40,7 @@ pip install openai flask
 *   **Linux/macOS**: `export MIMO_API_KEY="sk-xxxxxx"`
 
 ### 模式一：终端
-在终端中输出带有进度提示与Emoji的生成报告，并自动保存到本地：
+在终端中输出带有进度提示的生成报告，并自动保存到本地：
 ```bash
 python embodied_ai_hw.py
 ```
